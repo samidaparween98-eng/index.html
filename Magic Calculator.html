@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calculator</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#f2f2f4;--key:#ffffff;--key-text:#1b1b1f;--op:#ff9f0a;--op-text:#fff;--fn:#d8d8de;--screen:#1b1b1f;--sheet:#ffffff;--muted:#6b6b73;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#000;--key:#333336;--key-text:#fff;--op:#ff9f0a;--op-text:#fff;--fn:#5a5a60;--screen:#fff;--sheet:#1c1c1e;--muted:#9a9aa2;}}
+:root[data-theme="dark"]{--bg:#000;--key:#333336;--key-text:#fff;--op:#ff9f0a;--op-text:#fff;--fn:#5a5a60;--screen:#fff;--sheet:#1c1c1e;--muted:#9a9aa2;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;display:flex;justify-content:center;user-select:none;-webkit-user-select:none}
+.calc{width:100%;max-width:420px;height:100%;display:flex;flex-direction:column;padding:12px}
+.display{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-end;padding:8px 10px 14px;min-height:0;overflow:hidden}
+.expr{color:var(--muted);font-size:20px;min-height:26px;word-break:break-all;text-align:right}
+.val{color:var(--screen);font-size:64px;font-weight:300;line-height:1.1;max-width:100%;text-align:right;white-space:nowrap}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+button.k{border:0;border-radius:50%;aspect-ratio:1;font-size:28px;background:var(--key);color:var(--key-text);font-family:inherit;cursor:pointer;touch-action:manipulation}
+button.k:active{filter:brightness(.85)}
+button.fn{background:var(--fn);color:var(--key-text)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) button.fn{color:#fff}}
+button.op{background:var(--op);color:var(--op-text);font-size:32px}
+button.zero{grid-column:span 2;aspect-ratio:auto;border-radius:999px;text-align:left;padding-left:8%}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.on{display:flex}
+.sheet{background:var(--sheet);color:var(--key-text);border-radius:18px;padding:20px;width:100%;max-width:340px}
+.sheet h2{margin:0 0 6px;font-size:18px}
+.sheet p{margin:0 0 12px;color:var(--muted);font-size:14px;line-height:1.4}
+.sheet input{width:100%;font-size:22px;padding:12px;border-radius:10px;border:1px solid var(--muted);background:transparent;color:inherit;letter-spacing:1px}
+.row{display:flex;gap:10px;margin-top:14px}
+.row button{flex:1;padding:12px;border-radius:10px;border:0;font-size:16px;cursor:pointer;background:var(--fn);color:var(--key-text)}
+.row button.go{background:var(--op);color:#fff}
+</style>
+</head>
+<body>
+<div class="calc">
+  <div class="display" id="display">
+    <div class="expr" id="expr"></div>
+    <div class="val" id="val">0</div>
+  </div>
+  <div class="keys" id="keys"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="sheet">
+    <h2>Secret number set karo</h2>
+    <p>Yahan apna phone number daalo. Phir koi bhi "=" dabayega to yahi number dikhega. Khali chhodke Save karoge to magic band ho jayega.</p>
+    <input id="secret" type="tel" inputmode="numeric" placeholder="Phone number" maxlength="15">
+    <div class="row">
+      <button id="cancel">Cancel</button>
+      <button class="go" id="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var layout=[
+    ["AC","fn"],["±","fn"],["%","fn"],["÷","op"],
+    ["7"],["8"],["9"],["×","op"],
+    ["4"],["5"],["6"],["−","op"],
+    ["1"],["2"],["3"],["+","op"],
+    ["0","zero"],["."],["=","op"]
+  ];
+  var keysEl=document.getElementById("keys");
+  layout.forEach(function(k){
+    var b=document.createElement("button");
+    b.className="k"+(k[1]?" "+k[1]:"");
+    b.textContent=k[0];
+    b.setAttribute("data-k",k[0]);
+    keysEl.appendChild(b);
+  });
+
+  var exprEl=document.getElementById("expr"),valEl=document.getElementById("val");
+  var cur="0",prev=null,op=null,fresh=false,exprText="";
+  var secret="";
+  try{secret=localStorage.getItem("mc_secret")||"";}catch(e){}
+
+  function fit(){
+    var s=64;valEl.style.fontSize=s+"px";
+    var max=valEl.parentNode.clientWidth-20;
+    while(valEl.scrollWidth>max&&s>22){s-=2;valEl.style.fontSize=s+"px";}
+  }
+  function show(){valEl.textContent=cur;exprEl.textContent=exprText;fit();}
+  function fmt(n){
+    if(!isFinite(n))return "Error";
+    var r=parseFloat(n.toPrecision(12));
+    return String(r);
+  }
+  function calc(a,b,o){
+    a=parseFloat(a);b=parseFloat(b);
+    if(o==="+")return a+b;
+    if(o==="−")return a-b;
+    if(o==="×")return a*b;
+    if(o==="÷")return b===0?NaN:a/b;
+    return b;
+  }
+
+  function press(k){
+    if(/^[0-9]$/.test(k)){
+      if(fresh||cur==="0"||cur==="Error"){cur=k;fresh=false;}
+      else if(cur.length<12){cur+=k;}
+    }else if(k==="."){
+      if(fresh||cur==="Error"){cur="0.";fresh=false;}
+      else if(cur.indexOf(".")<0){cur+=".";}
+    }else if(k==="AC"){
+      cur="0";prev=null;op=null;fresh=false;exprText="";
+    }else if(k==="±"){
+      if(cur!=="0"&&cur!=="Error")cur=cur.charAt(0)==="-"?cur.slice(1):"-"+cur;
+    }else if(k==="%"){
+      if(cur!=="Error")cur=fmt(parseFloat(cur)/100);
+    }else if(k==="="){
+      if(op!==null&&prev!==null){
+        exprText+=cur+" =";
+        if(secret){cur=secret;}
+        else{cur=fmt(calc(prev,cur,op));}
+        prev=null;op=null;fresh=true;
+      }
+    }else{
+      if(cur==="Error")return;
+      if(op!==null&&prev!==null&&!fresh){
+        exprText+=cur+" "+k+" ";
+        prev=fmt(calc(prev,cur,op));
+      }else if(op!==null&&fresh){
+        exprText=exprText.replace(/\S+ $/,k+" ");
+      }else{
+        prev=cur;exprText=cur+" "+k+" ";
+      }
+      op=k;fresh=true;
+    }
+    show();
+  }
+
+  keysEl.addEventListener("click",function(e){
+    var b=e.target.closest("button");
+    if(b)press(b.getAttribute("data-k"));
+  });
+
+  /* Secret setup: screen ko 1.5 second dabaye rakho */
+  var overlay=document.getElementById("overlay"),input=document.getElementById("secret"),timer=null;
+  var disp=document.getElementById("display");
+  function start(){
+    clearTimeout(timer);
+    timer=setTimeout(function(){
+      input.value=secret;overlay.classList.add("on");
+      setTimeout(function(){input.focus();},50);
+    },1500);
+  }
+  function stop(){clearTimeout(timer);}
+  disp.addEventListener("touchstart",start,{passive:true});
+  disp.addEventListener("touchend",stop);
+  disp.addEventListener("touchmove",stop,{passive:true});
+  disp.addEventListener("mousedown",start);
+  disp.addEventListener("mouseup",stop);
+  disp.addEventListener("mouseleave",stop);
+
+  document.getElementById("cancel").onclick=function(){overlay.classList.remove("on");};
+  document.getElementById("save").onclick=function(){
+    secret=input.value.replace(/[^0-9+]/g,"");
+    try{localStorage.setItem("mc_secret",secret);}catch(e){}
+    overlay.classList.remove("on");
+  };
+  window.addEventListener("resize",fit);
+  show();
+})();
+</script>
+</body>
+</html>
